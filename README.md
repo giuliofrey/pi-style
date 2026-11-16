@@ -1,4 +1,9 @@
-# @quandev104/pi-style
+# pi-style — Giulio's fork
+
+Fork of [quanpersie2001/pi-style](https://github.com/quanpersie2001/pi-style), based on `v0.5.16`.
+Adds an in-card proposed Edit diff before approval, using native Edit matching with a no-op write backend.
+The package name, commands, settings, and integration symbols remain unchanged for compatibility.
+See [AGENTS.md](AGENTS.md) for fork maintenance notes. The npm badge below refers to upstream.
 
 [![npm](https://img.shields.io/npm/v/@quandev104/pi-style)](https://www.npmjs.com/package/@quandev104/pi-style)
 [![license](https://img.shields.io/npm/l/@quandev104/pi-style)](LICENSE)
@@ -36,7 +41,7 @@ All certified surfaces are **on by default**. The single OFF switch is:
 ## Install
 
 ```bash
-pi install npm:@quandev104/pi-style
+pi install git:github.com/giuliofrey/pi-style
 ```
 
 Run a real TUI session with the extension source (development):
@@ -219,7 +224,7 @@ Start with [`docs/README.md`](docs/README.md), then the product, architecture, a
 ## Development
 
 ```bash
-npm ci
+npm install --package-lock=false
 npm run typecheck
 npm run lint
 npm run depcruise
@@ -230,7 +235,7 @@ npm run check
 
 `npm run check` runs all required automated gates in order.
 
-Current test suite: 917 tests across 48 files.
+The inherited lockfile currently fails `npm ci`; see [AGENTS.md](AGENTS.md) for details.
 
 ---
 

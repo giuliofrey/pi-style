@@ -1,4 +1,10 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { access, readFile } from "node:fs/promises";
+import {
+	createEditTool,
+	type EditToolInput,
+	type ExtensionAPI,
+	type ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 import type { StatusSnapshot } from "../domain/status.js";
 import { resolvePendingImageMarkers, transformClipboardImages } from "../features/messages/image-input.js";
 import {
@@ -17,6 +23,7 @@ import {
 	refreshThoughtComponentsForMessage,
 } from "../features/messages/thought-summary.js";
 import { closeActiveBatch, resetReadChunkCandidates } from "../features/tools/boxed/batch.js";
+import { clearEditPreview, setEditPreview } from "../features/tools/boxed/edit-preview.js";
 import { rebuildTeammateRuns, resetTeammateRuns } from "../features/tools/boxed/team-run-labels.js";
 import {
 	beginAgentRun,
@@ -116,6 +123,7 @@ export default function piStyleExtension(pi: ExtensionAPI): void {
 	// The assistant-start handler is a synchronous fallback for runtimes that begin
 	// the assistant before the deferred flush runs. A steered prompt arriving before
 	// flush replaces the staged slot (last write wins).
+	let editPreviewGeneration = 0;
 	let stagedImagePreview: ImagePreviewEntryData | undefined;
 	let previewFlushTimer: ReturnType<typeof setTimeout> | undefined;
 	pi.on("before_agent_start", (event: BeforeAgentStartEventShape) => {
@@ -129,6 +137,8 @@ export default function piStyleExtension(pi: ExtensionAPI): void {
 		stagedImagePreview = stageImagePreviewData(event.images ?? []);
 	});
 	pi.on("session_start", async (event, ctx) => {
+		editPreviewGeneration++;
+		clearEditPreview();
 		resetUsageFromSessionCache(ctx.sessionManager);
 		// Pi only activates read/bash/edit/write by default; grep/find/ls are
 		// registered but inactive (kept out of the model's tool list to keep the
@@ -196,7 +206,26 @@ export default function piStyleExtension(pi: ExtensionAPI): void {
 		}
 		return undefined;
 	});
-	pi.on("tool_execution_start", () => coordinator.app.runtime.current?.dismissStartup());
+	pi.on("tool_execution_start", async (event, ctx) => {
+		coordinator.app.runtime.current?.dismissStartup();
+		if (event.toolName !== "edit" || ctx.mode !== "tui") return;
+		const source = pi.getAllTools().find((tool) => tool.name === "edit")?.sourceInfo;
+		if (source?.source !== "builtin" || source.path !== "builtin:edit") return;
+		const generation = editPreviewGeneration;
+		try {
+			// Prepare before tool_call approvals; no filesystem I/O belongs in render().
+			const previewTool = createEditTool(ctx.cwd, { operations: { access, readFile, writeFile: async () => {} } });
+			const input = ((await previewTool.prepareArguments?.(structuredClone(event.args))) ??
+				event.args) as EditToolInput;
+			const result = await previewTool.execute(event.toolCallId, input, ctx.signal);
+			if (generation === editPreviewGeneration && !ctx.signal?.aborted && typeof result.details?.diff === "string") {
+				setEditPreview(event.toolCallId, { path: input.path, diff: result.details.diff });
+			}
+		} catch {
+			// Native execution retains ownership of validation and file-access errors.
+		}
+	});
+	pi.on("tool_execution_end", (event) => clearEditPreview(event.toolCallId));
 	pi.on("model_select", (event) =>
 		coordinator.app.update(
 			{
@@ -326,6 +355,8 @@ export default function piStyleExtension(pi: ExtensionAPI): void {
 		coordinator.app.update({ ...usagePatch(ctx) }, "delayed-retry", { refreshContextUsage: true });
 	});
 	pi.on("session_shutdown", (_event, ctx) => {
+		editPreviewGeneration++;
+		clearEditPreview();
 		resetUsageFromSessionCache(ctx.sessionManager);
 		resetTeammateRuns();
 		coordinator.shutdown();

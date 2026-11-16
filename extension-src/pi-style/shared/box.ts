@@ -95,7 +95,7 @@ export interface BoxedRenderOptions {
 	/** Wall-clock elapsed override (used when metrics are not in result.details). */
 	elapsedMs?: number;
 	/** Width-dependent content lines rendered between the top border and the
-	 *  footer border of a compact box (replaces the blank breathing line).
+	 *  footer border of a call box.
 	 *  Each returned line is truncated to the box inner width by the renderer.
 	 *  Returns an empty array for no body (blank line preserved). */
 	bodyLines?: (contentWidth: number) => string[];
@@ -759,6 +759,9 @@ export function renderBoxedToolCall(
 				),
 				boxBlankLine(theme, renderedWidth, frameColor),
 				...detailLines.flatMap((line) => boxedWrappedLines(theme, line, renderedWidth, frameColor)),
+				...(options.bodyLines?.(boxInnerWidth(renderedWidth)) ?? []).flatMap((line) =>
+					boxedWrappedLines(theme, line, renderedWidth, frameColor),
+				),
 			];
 			if (options.isPending && !options.resultSeen) {
 				// Pending/running card: close the box with the status label. Once a

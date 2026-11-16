@@ -20,6 +20,7 @@ import {
 	extractEditedPath,
 	firstText,
 } from "../../../shared/split-diff.js";
+import { getEditPreview } from "./edit-preview.js";
 import { compactToolPath } from "./path.js";
 import { isResultSeen } from "./session-config.js";
 import {
@@ -67,7 +68,30 @@ export const editTool: BoxedToolDefinition = {
 		noteExecutionStart(context);
 		noteBoxedCallState(context);
 		const path = displayPath(String(args?.path ?? args?.file_path ?? ""), context);
+		const preview =
+			context.isPartial && context.executionStarted && context.argsComplete && !context.isError
+				? getEditPreview(context.toolCallId, context.invalidate)
+				: undefined;
+		let previewView: Component | undefined;
+		if (preview) {
+			noteDiffHeaderStats(context, countDiffStats(preview.diff));
+			previewView = memoizedStateComponent(
+				context.state,
+				"__piStyleEditPreview",
+				getRenderCacheKey("edit-preview", theme, context.expanded, preview.diff, preview.path),
+				() => {
+					const rows = buildSplitRows(preview.diff);
+					const language = getLanguageFromPath(preview.path);
+					const highlight =
+						language && preview.diff.length <= MAX_HIGHLIGHT_DIFF_CHARS && rows.length <= MAX_HIGHLIGHT_DIFF_ROWS;
+					return new AdaptiveDiffComponent(theme, rows, context.expanded ? 160 : 36, highlight ? language : undefined);
+				},
+			);
+		}
 		return renderBoxedToolCall(theme, "Edit", [], {
+			...(previewView
+				? { bodyLines: (width: number) => previewView.render(width), pendingLabel: theme.fg("muted", "Proposed edit") }
+				: {}),
 			// Lazy: the settled result publishes diff stats into the shared renderer
 			// state, and this function resolves at render time — so the header picks
 			// up `· +N -M` on the same paint the diff body appears (the write footer
